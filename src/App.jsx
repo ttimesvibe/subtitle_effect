@@ -1198,15 +1198,18 @@ export default function App() {
       </div>}
 
       {/* 분석 완료, 가이드 모드 미선택 */}
-      {hasData && !guideMode && !gReady && !gBusy && <div style={{padding:48,textAlign:"center"}}>
-        {anal?.editorial_summary && <div style={{maxWidth:640,margin:"0 auto 24px"}}>
+      {hasData && !guideMode && !gReady && !gBusy && <div style={{flex:1,overflowY:"auto",padding:"32px 24px"}}>
+        <div style={{maxWidth:640,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:16,
+            background:C.cBg,border:`1px solid ${C.cBorder}`,fontSize:12,color:C.ok}}>
+            ✅ 사전 분석 완료 — {blocks.length}블록
+          </div>
+        </div>
+        {anal?.editorial_summary && <div style={{marginBottom:24}}>
           <EditorialSummaryPanel summary={anal.editorial_summary} collapsed={summaryCollapsed} onToggle={()=>setSummaryCollapsed(p=>!p)}/>
         </div>}
-        <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:16,
-          background:C.cBg,border:`1px solid ${C.cBorder}`,fontSize:12,color:C.ok,marginBottom:24}}>
-          ✅ 사전 분석 완료 — {blocks.length}블록
-        </div>
-        <div style={{display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap",maxWidth:640,margin:"0 auto"}}>
+        <div style={{display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap"}}>
           <div onClick={()=>{setGuideMode("auto");handleGuide()}}
             style={{flex:"1 1 260px",maxWidth:300,padding:"28px 24px",borderRadius:14,cursor:"pointer",
               border:`2px solid ${C.ac}44`,background:C.sf,transition:"all 0.15s",
@@ -1233,6 +1236,7 @@ export default function App() {
               수동 추가와 AI 부분 생성을 자유롭게 조합합니다.
             </div>
           </div>
+        </div>
         </div>
       </div>}
 
