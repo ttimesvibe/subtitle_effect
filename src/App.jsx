@@ -1289,47 +1289,54 @@ export default function App() {
                 onMarkerAdd={handleMarkerAdd}/>
               {/* 블록 클릭 시 우하단 자막 추가 버튼 */}
               {aBlock===idx && addingAt!==idx && (
-                <div style={{display:"flex",justifyContent:"flex-end",marginTop:6}}>
+                <div style={{padding:"4px 16px 8px",display:"flex",justifyContent:"flex-end"}}>
                   <button onClick={e=>{e.stopPropagation();setAddingAt(idx);setAddForm({subtitle:"",type:"A1"})}}
                     style={{fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:6,
-                      border:`1px dashed ${C.hBd}`,background:C.hFaint,color:C.hBd,cursor:"pointer"}}>
-                    + 자막 추가</button>
+                      border:`1px dashed ${C.hBd}`,background:C.hLight,
+                      color:C.hBd,cursor:"pointer"}}>+ 자막 추가</button>
                 </div>
               )}
             </div>
-            {/* 자막 추가 폼 (블록 아래 인라인) */}
+            {/* 자막 추가 입력 폼 */}
             {addingAt===idx && (
-              <div style={{margin:"4px 16px 8px",padding:12,border:`1px solid ${C.cBorder}`,borderRadius:10,background:C.cFaint}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.cTx,marginBottom:8}}>✏️ 자막 추가 — 블록 #{idx}</div>
-                <div style={{display:"flex",gap:6,marginBottom:6}}>
-                  <select value={addForm.type} onChange={e=>setAddForm(f=>({...f,type:e.target.value}))}
-                    style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${C.bd}`,background:C.inputBg,color:C.tx,fontSize:11,outline:"none"}}>
-                    {["A1","A2","A3","B1","B2","B3","C1","C2","C3","C4","C5","D1","D2","D3","E1","E2"].map(t=>
-                      <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  {addForm.type === "B2" && <div style={{display:"flex",gap:4,flex:1}}>
-                    <input value={addForm.termInput||""} onChange={e=>setAddForm(f=>({...f,termInput:e.target.value}))}
-                      placeholder="용어 입력" style={{flex:1,padding:"4px 8px",borderRadius:5,border:`1px solid ${C.bd}`,
-                        background:C.inputBg,color:C.tx,fontSize:11,outline:"none"}}
-                      onKeyDown={e=>{if(e.key==="Enter")handleTermGen()}}/>
-                    <button onClick={handleTermGen} disabled={addForm.generating}
-                      style={{fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:5,border:"none",
-                        background:C.ac,color:C.btnTx,cursor:"pointer",whiteSpace:"nowrap"}}>
-                      {addForm.generating?"생성 중...":"AI 설명"}</button>
-                  </div>}
+              <div onClick={e=>e.stopPropagation()} style={{margin:"0 16px 10px",padding:12,borderRadius:10,
+                border:`1px solid ${C.hBd}`,background:C.hFaint}}>
+                <div style={{display:"flex",gap:6,marginBottom:8}}>
+                  {[["A1","강조자막"],["B2","용어 설명"]].map(([t,l])=>
+                    <button key={t} onClick={()=>setAddForm(f=>({...f,type:t}))}
+                      style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:5,cursor:"pointer",
+                        border:`1px solid ${addForm.type===t?C.hBd:"transparent"}`,
+                        background:addForm.type===t?C.hBg:C.glass,
+                        color:addForm.type===t?C.hBd:C.txD}}>{l}</button>)}
                 </div>
+                {addForm.type==="B2" && (
+                  <div style={{display:"flex",gap:4,marginBottom:6}}>
+                    <input value={addForm.termInput||""} onChange={e=>setAddForm(f=>({...f,termInput:e.target.value}))}
+                      placeholder="용어를 입력하세요 (예: 에이전트)"
+                      style={{flex:1,padding:"5px 8px",borderRadius:6,border:`1px solid ${C.bd}`,
+                        background:C.inputBg,color:C.tx,fontSize:12,outline:"none"}}
+                      onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();handleTermGen();}}}/>
+                    <button onClick={handleTermGen} disabled={addForm.generating}
+                      style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:5,border:"none",
+                        background:addForm.generating?C.acFade:C.ac,
+                        color:C.btnTx,cursor:addForm.generating?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                      {addForm.generating?"생성 중...":"AI 설명 생성"}</button>
+                  </div>
+                )}
                 <textarea value={addForm.subtitle} onChange={e=>setAddForm(f=>({...f,subtitle:e.target.value}))}
-                  placeholder="자막 텍스트" rows={2} autoFocus
+                  placeholder={addForm.type==="B2"?"용어(English) : 설명":"강조자막 내용"}
+                  rows={2} autoFocus={addForm.type!=="B2"}
                   style={{width:"100%",padding:"6px 8px",borderRadius:6,border:`1px solid ${C.bd}`,
-                    background:C.inputBg,color:C.tx,fontSize:13,fontFamily:FN,lineHeight:1.5,resize:"vertical",outline:"none"}}
-                  onClick={e=>e.stopPropagation()}/>
+                    background:C.inputBg,color:C.tx,fontSize:13,fontFamily:FN,
+                    lineHeight:1.5,resize:"vertical",outline:"none"}}
+                  onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleAddSubtitle();}if(e.key==="Escape")setAddingAt(null);}}/>
                 <div style={{display:"flex",gap:4,marginTop:6,justifyContent:"flex-end"}}>
-                  <button onClick={e=>{e.stopPropagation();setAddingAt(null);setAddForm({subtitle:"",type:"A1"})}}
-                    style={{fontSize:11,padding:"4px 12px",borderRadius:5,border:`1px solid ${C.bd}`,
+                  <button onClick={()=>setAddingAt(null)}
+                    style={{fontSize:11,padding:"3px 10px",borderRadius:4,border:`1px solid ${C.bd}`,
                       background:"transparent",color:C.txM,cursor:"pointer"}}>취소</button>
-                  <button onClick={e=>{e.stopPropagation();handleAddSubtitle()}}
-                    style={{fontSize:11,padding:"4px 12px",borderRadius:5,border:"none",
-                      background:C.cTx,color:C.btnTx,fontWeight:600,cursor:"pointer"}}>추가</button>
+                  <button onClick={handleAddSubtitle}
+                    style={{fontSize:11,padding:"3px 10px",borderRadius:4,border:"none",
+                      background:C.hBd,color:C.btnTx,fontWeight:600,cursor:"pointer"}}>추가</button>
                 </div>
               </div>
             )}
