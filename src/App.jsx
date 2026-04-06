@@ -772,6 +772,7 @@ export default function App() {
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
   const [autoSaveStatus, setAutoSaveStatus] = useState(""); // "", "pending", "saving", "saved"
   const autoSaveTimer = useRef(null);
+  const sessionIdRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [matchingMode, setMatchingMode] = useState(null);
   const [showSessions, setShowSessions] = useState(false);
@@ -866,6 +867,8 @@ export default function App() {
   }, [blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, cfg, sessionId]);
 
   // ── 3분 디바운스 자동 저장 (변경 감지 → 3분 후 /autosave 호출) ──
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+
   useEffect(() => {
     if (cfg.apiMode === "mock" || !cfg.workerUrl) return;
     if (!blocks || blocks.length === 0) return;
@@ -879,15 +882,17 @@ export default function App() {
       setAutoSaveStatus("saving");
       try {
         const session = { blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, savedAt: new Date().toISOString() };
-        const id = sessionId || (Date.now().toString(36) + Math.random().toString(36).substring(2, 8));
+        const curId = sessionIdRef.current;
+        const id = curId || (Date.now().toString(36) + Math.random().toString(36).substring(2, 8));
         const res = await fetch(`${cfg.workerUrl}/autosave`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, ...session }),
         });
         const data = await res.json();
         if (data.success) {
-          if (!sessionId) {
+          if (!curId) {
             setSessionId(data.id);
+            sessionIdRef.current = data.id;
             window.history.replaceState({}, "", `${window.location.pathname}?s=${data.id}`);
           }
           setLastSavedSnapshot(currentSnapshot);
@@ -901,7 +906,7 @@ export default function App() {
     }, 3 * 60 * 1000); // 3분
 
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, sessionId, lastSavedSnapshot, cfg]);
+  }, [blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, lastSavedSnapshot, cfg]);
 
   const handleShare = useCallback(async () => {
     setSaving(true); setErr(null);
@@ -910,17 +915,22 @@ export default function App() {
       if (sessionId) payload.id = sessionId;
       const id = await apiSaveSession(payload, cfg);
       setSessionId(id);
+      sessionIdRef.current = id;
       const url = `${window.location.origin}${window.location.pathname}?s=${id}`;
       setShareUrl(url);
       window.history.replaceState({}, "", `${window.location.pathname}?s=${id}`);
+      setLastSavedSnapshot(JSON.stringify({ blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode }));
+      if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); setAutoSaveStatus(""); }
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
   }, [blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, cfg, sessionId]);
 
   const handleReset = useCallback(() => {
     localStorage.removeItem("se_session");
+    if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null; }
+    setAutoSaveStatus(""); setLastSavedSnapshot("");
     setBlocks([]); setAnal(null); setHl([]); setHlStats(null); setHlVerdicts({}); setHlEdits({}); setHlMarkers({});
-    setFn(""); setGReady(false); setGuideMode(null); setTextSel(null); setSessionId(null);
+    setFn(""); setGReady(false); setGuideMode(null); setTextSel(null); setSessionId(null); sessionIdRef.current = null;
     window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
