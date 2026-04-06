@@ -769,6 +769,9 @@ export default function App() {
   const [err, setErr] = useState(null);
   const [shareUrl, setShareUrl] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
+  const [autoSaveStatus, setAutoSaveStatus] = useState(""); // "", "pending", "saving", "saved"
+  const autoSaveTimer = useRef(null);
   const [saving, setSaving] = useState(false);
   const [matchingMode, setMatchingMode] = useState(null);
   const [showSessions, setShowSessions] = useState(false);
@@ -861,6 +864,44 @@ export default function App() {
       window.history.replaceState({}, "", `${window.location.pathname}?s=${id}`);
     } catch (e) { console.warn("자동 저장 실패:", e.message); }
   }, [blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, cfg, sessionId]);
+
+  // ── 3분 디바운스 자동 저장 (변경 감지 → 3분 후 /autosave 호출) ──
+  useEffect(() => {
+    if (cfg.apiMode === "mock" || !cfg.workerUrl) return;
+    if (!blocks || blocks.length === 0) return;
+    const currentSnapshot = JSON.stringify({ blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode });
+    if (currentSnapshot === lastSavedSnapshot) return;
+
+    setAutoSaveStatus("pending");
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+
+    autoSaveTimer.current = setTimeout(async () => {
+      setAutoSaveStatus("saving");
+      try {
+        const session = { blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, savedAt: new Date().toISOString() };
+        const id = sessionId || (Date.now().toString(36) + Math.random().toString(36).substring(2, 8));
+        const res = await fetch(`${cfg.workerUrl}/autosave`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, ...session }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (!sessionId) {
+            setSessionId(data.id);
+            window.history.replaceState({}, "", `${window.location.pathname}?s=${data.id}`);
+          }
+          setLastSavedSnapshot(currentSnapshot);
+          setAutoSaveStatus("saved");
+          setTimeout(() => setAutoSaveStatus(""), 3000);
+        } else { setAutoSaveStatus(""); }
+      } catch (e) {
+        console.warn("자동 저장 실패:", e.message);
+        setAutoSaveStatus("");
+      }
+    }, 3 * 60 * 1000); // 3분
+
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [blocks, anal, hl, hlStats, hlVerdicts, hlEdits, hlMarkers, fn, guideMode, sessionId, lastSavedSnapshot, cfg]);
 
   const handleShare = useCallback(async () => {
     setSaving(true); setErr(null);
@@ -1131,6 +1172,10 @@ export default function App() {
         <span style={{fontSize:10,padding:"2px 6px",borderRadius:3,fontWeight:600,
           background:cfg.apiMode==="live"?C.cBg:C.fBg,
           color:cfg.apiMode==="live"?C.ok:C.wn}}>{cfg.apiMode==="live"?"LIVE":"MOCK"}</span>
+        {autoSaveStatus && <span style={{fontSize:11,color:autoSaveStatus==="saved"?"#22C55E":"#9CA3AF",padding:"3px 8px",borderRadius:6,
+          background:autoSaveStatus==="saved"?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.04)"}}>
+          {autoSaveStatus==="pending"?"⏳ 자동 저장 대기":autoSaveStatus==="saving"?"💾 자동 저장 중...":"✓ 자동 저장됨"}
+        </span>}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {hasData && (
@@ -1534,3 +1579,4 @@ export default function App() {
     `}</style>
   </div>;
 }
+
