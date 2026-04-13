@@ -2,6 +2,23 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import * as mammoth from "mammoth";
 
 // ═══════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════
+
+const AUTH_URL = "https://auth.ttimes6000.workers.dev";
+function getAuthHeaders() {
+  const token = localStorage.getItem("ttimes_token");
+  return token ? { "Authorization": `Bearer ${token}` } : {};
+}
+function decodeJWT(token) {
+  try {
+    const b64 = token.split(".")[1];
+    const bytes = Uint8Array.from(atob(b64.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch { return null; }
+}
+
+// ═══════════════════════════════════════════════
 // CONFIG & PERSISTENCE
 // ═══════════════════════════════════════════════
 
@@ -31,7 +48,7 @@ async function apiCall(endpoint, body, config, retries = 4) {
     try {
       r = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(body),
       });
     } catch (netErr) {
@@ -43,6 +60,8 @@ async function apiCall(endpoint, body, config, retries = 4) {
       }
       throw new Error(`네트워크 연결 실패 (${endpoint}). Worker 서버 상태를 확인해주세요.\n원인: ${netErr.message}`);
     }
+
+    if (r.status === 401) { localStorage.removeItem("ttimes_token"); window.location.reload(); return; }
 
     let d;
     try {
@@ -75,9 +94,10 @@ async function apiSaveSession(sessionData, config) {
   if (!base) throw new Error("Worker URL이 설정되지 않았습니다.");
   const r = await fetch(`${base}/save`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(sessionData),
   });
+  if (r.status === 401) { localStorage.removeItem("ttimes_token"); window.location.reload(); return; }
   const d = await r.json();
   if (!d.success) throw new Error(d.error || "저장 실패");
   return d.id;
@@ -86,7 +106,8 @@ async function apiSaveSession(sessionData, config) {
 async function apiLoadSession(id, config) {
   const base = config.workerUrl || "";
   if (!base) throw new Error("Worker URL이 설정되지 않았습니다.");
-  const r = await fetch(`${base}/load/${id}`);
+  const r = await fetch(`${base}/load/${id}`, { headers: { ...getAuthHeaders() } });
+  if (r.status === 401) { localStorage.removeItem("ttimes_token"); window.location.reload(); return; }
   if (!r.ok) { const d = await r.json(); throw new Error(d.error || "불러오기 실패"); }
   return r.json();
 }
@@ -607,8 +628,8 @@ function SessionListModal({ config, onLoad, onClose }) {
 
   useEffect(() => {
     if (!config.workerUrl || config.apiMode === "mock") { setLoading(false); return; }
-    fetch(`${config.workerUrl}/sessions`)
-      .then(r => r.json())
+    fetch(`${config.workerUrl}/sessions`, { headers: { ...getAuthHeaders() } })
+      .then(r => { if (r.status === 401) { localStorage.removeItem("ttimes_token"); window.location.reload(); } return r.json(); })
       .then(d => { if (d.success) setSessions(d.sessions || []); })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -618,10 +639,11 @@ function SessionListModal({ config, onLoad, onClose }) {
     if (!confirm("이 세션을 삭제할까요?")) return;
     setDeleting(id);
     try {
-      await fetch(`${config.workerUrl}/sessions/delete`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+      const delRes = await fetch(`${config.workerUrl}/sessions/delete`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ id }),
       });
+      if (delRes.status === 401) { localStorage.removeItem("ttimes_token"); window.location.reload(); return; }
       setSessions(prev => prev.filter(s => s.id !== id));
     } catch {}
     setDeleting(null);
@@ -735,10 +757,59 @@ function EditorialSummaryPanel({ summary, collapsed, onToggle }) {
 }
 
 // ═══════════════════════════════════════════════
+// AUTH GATE
+// ═══════════════════════════════════════════════
+
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const handleLogin = async (e) => {
+    e.preventDefault(); setLoading(true); setError("");
+    try {
+      const res = await fetch(`${AUTH_URL}/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+      const data = await res.json();
+      if (data.success) { onLogin(data.token, data.user); } else { setError(data.error || "로그인 실패"); }
+    } catch { setError("서버 연결 실패"); } finally { setLoading(false); }
+  };
+  const iS = {width:"100%",padding:"12px 16px",borderRadius:8,border:`1px solid ${C.bd}`,background:C.sf,color:C.tx,fontSize:14,fontFamily:FN,outline:"none",boxSizing:"border-box"};
+  return <div style={{height:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FN}}>
+    <div style={{background:C.sf,border:`1px solid ${C.bd}`,borderRadius:16,padding:"48px 40px",width:"100%",maxWidth:400,boxShadow:"0 4px 24px rgba(0,0,0,0.06)"}}>
+      <h1 style={{textAlign:"center",fontSize:20,fontWeight:800,marginBottom:32,color:C.tx}}><span style={{color:C.hBd}}>S</span>ubtitle <span style={{color:C.ac}}>E</span>ffect</h1>
+      <form onSubmit={handleLogin}>
+        <div style={{marginBottom:16}}><label style={{fontSize:12,color:C.txD,marginBottom:6,display:"block"}}>아이디</label><input type="text" value={email} onChange={e=>setEmail(e.target.value)} style={iS} required autoFocus/></div>
+        <div style={{marginBottom:20}}><label style={{fontSize:12,color:C.txD,marginBottom:6,display:"block"}}>비밀번호</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} style={iS} required/></div>
+        {error && <div style={{padding:"10px 14px",borderRadius:8,marginBottom:16,background:C.tBg,color:C.tTx,fontSize:13}}>{error}</div>}
+        <button type="submit" disabled={loading} style={{width:"100%",padding:"13px",borderRadius:8,border:"none",background:loading?C.acFade:C.gradAc,color:C.btnTx,fontSize:15,fontWeight:600,cursor:loading?"not-allowed":"pointer",fontFamily:FN}}>{loading?"로그인 중...":"로그인"}</button>
+      </form>
+    </div>
+  </div>;
+}
+
+export default function App() {
+  const [authState, setAuthState] = useState("checking");
+  const [authUser, setAuthUser] = useState(null);
+  useEffect(() => {
+    const token = localStorage.getItem("ttimes_token");
+    if (!token) { setAuthState("login"); return; }
+    try {
+      const payload = decodeJWT(token);
+      if (!payload || payload.exp < Date.now() / 1000) { localStorage.removeItem("ttimes_token"); setAuthState("login"); return; }
+      setAuthUser({ email: payload.sub, name: payload.name, role: payload.role });
+      setAuthState("authenticated");
+    } catch { localStorage.removeItem("ttimes_token"); setAuthState("login"); }
+  }, []);
+  if (authState === "checking") return <div style={{height:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",color:C.txD,fontFamily:FN}}>로딩 중...</div>;
+  if (authState === "login") return <LoginScreen onLogin={(token, user) => { localStorage.setItem("ttimes_token", token); localStorage.setItem("ttimes_user", JSON.stringify(user)); setAuthUser(user); setAuthState("authenticated"); }} />;
+  return <AppMain authUser={authUser} onLogout={() => { localStorage.removeItem("ttimes_token"); localStorage.removeItem("ttimes_user"); setAuthUser(null); setAuthState("login"); }} />;
+}
+
+// ═══════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════
 
-export default function App() {
+function AppMain({ authUser, onLogout }) {
   const [cfg, setCfg] = useState(loadConfig);
   const [theme, setTheme] = useState(_savedTheme);
   const toggleTheme = useCallback(() => {
@@ -885,9 +956,10 @@ export default function App() {
         const curId = sessionIdRef.current;
         const id = curId || (Date.now().toString(36) + Math.random().toString(36).substring(2, 8));
         const res = await fetch(`${cfg.workerUrl}/autosave`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           body: JSON.stringify({ id, ...session }),
         });
+        if (res.status === 401) { localStorage.removeItem("ttimes_token"); window.location.reload(); return; }
         const data = await res.json();
         if (data.success) {
           if (!curId) {
@@ -1214,6 +1286,9 @@ export default function App() {
             background:"transparent",color:C.txM,fontSize:12,cursor:"pointer"}}>{theme==="dark"?"☀️":"🌙"}</button>
         <button onClick={()=>setShowSet(true)} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${C.bd}`,
           background:"transparent",color:C.txM,fontSize:12,cursor:"pointer"}}>⚙️</button>
+        {authUser&&<span style={{fontSize:12,color:C.txM,marginLeft:4}}>{authUser.name||authUser.email}</span>}
+        <button onClick={onLogout} style={{padding:"5px 14px",borderRadius:6,border:`1px solid ${C.bd}`,
+          background:C.sf,color:C.txM,fontSize:12,cursor:"pointer"}}>로그아웃</button>
       </div>
     </header>
 

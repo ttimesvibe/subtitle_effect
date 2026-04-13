@@ -2,23 +2,61 @@
 // 엔드포인트: /analyze, /highlights, /term-explain, /save, /load/:id, /sessions, /sessions/delete
 // ttimes-doctor에서 강조자막 기능만 추출한 독립 Worker
 
+const ALLOWED_ORIGINS = [
+  "https://ttimesvibe.github.io",
+  "http://localhost:5173",
+  "http://localhost:4173",
+];
+function getAllowedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  return ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+}
+
+async function verifyJWT(token, secret) {
+  const [headerB64, payloadB64, sigB64] = token.split(".");
+  if (!headerB64 || !payloadB64 || !sigB64) throw new Error("Invalid token");
+  const encoder = new TextEncoder();
+  const data = `${headerB64}.${payloadB64}`;
+  const key = await crypto.subtle.importKey(
+    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]
+  );
+  const sig = Uint8Array.from(atob(sigB64.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+  const valid = await crypto.subtle.verify("HMAC", key, sig, encoder.encode(data));
+  if (!valid) throw new Error("Invalid signature");
+  const payloadBytes = Uint8Array.from(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+  const payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+  if (payload.exp < Date.now() / 1000) throw new Error("Token expired");
+  return payload;
+}
+
+async function verifyAuth(request, env) {
+  const auth = request.headers.get("Authorization");
+  if (!auth || !auth.startsWith("Bearer ")) return null;
+  try { return await verifyJWT(auth.slice(7), env.JWT_SECRET); }
+  catch { return null; }
+}
+
 export default {
   async fetch(request, env) {
+    const allowedOrigin = getAllowedOrigin(request);
     const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": allowedOrigin,
       "Content-Type": "application/json",
     };
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": allowedOrigin,
           "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
           "Access-Control-Max-Age": "86400",
         },
       });
     }
+
+    const user = await verifyAuth(request, env);
+    if (!user) return new Response(JSON.stringify({ error: "인증이 필요합니다" }), { status: 401, headers: corsHeaders });
 
     const url = new URL(request.url);
     const path = url.pathname;
